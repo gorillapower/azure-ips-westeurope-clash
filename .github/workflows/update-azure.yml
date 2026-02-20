@@ -3,14 +3,12 @@ on:
   schedule:
     - cron: '0 0 * * 5' # Runs every Friday (Microsoft usually updates on Thursdays)
   workflow_dispatch: # Allows you to run it manually for testing
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
-
       - name: Fetch and Generate Rule Sets
         run: |
           # 1. Scrape the landing page for the actual JSON download link
@@ -20,30 +18,22 @@ jobs:
             echo "Error: Could not find download URL"
             exit 1
           fi
-
           curl -sL "$DOWNLOAD_URL" -o azure.json
 
-          # 2. Function to extract region (including sub-regions) and format for Clash
-            generate_yaml() {
+          # Generate ipcidr format (raw CIDRs only) for ipcidr behavior
+          generate_yaml() {
             REGION_PATTERN=$1
             FILENAME=$2
             echo "payload:" > "$FILENAME"
-            
-            # We use a regex in jq to match any region starting with the pattern 
-            # (e.g., "westus" will match "westus", "westus2", and "westus3")
             jq -r ".values[] | select(.name | test(\"AzureCloud.${REGION_PATTERN}[0-9]*$\")) | .properties.addressPrefixes[]" azure.json \
             | sort -u \
-            | sed 's/^/  - IP-CIDR,/' \
-            | sed 's/$/,no-resolve/' >> "$FILENAME"
-          
+            | sed 's/^/  - /' >> "$FILENAME"
             echo "Generated $FILENAME with wildcard pattern: $REGION_PATTERN"
           }
-          
-          # 3. Generate the files using the base region names
-            generate_yaml "westeurope" "azure_west_europe.yaml"
-            generate_yaml "eastus" "azure_us_east.yaml"
-            generate_yaml "westus" "azure_us_west.yaml"
 
+          generate_yaml "westeurope" "azure_west_europe.yaml"
+          generate_yaml "eastus" "azure_us_east.yaml"
+          generate_yaml "westus" "azure_us_west.yaml"
       - name: Commit and Push
         run: |
           git config --local user.email "action@github.com"
