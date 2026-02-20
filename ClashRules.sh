@@ -113,11 +113,11 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # Nuke original rules and build from scratch.
       # Unshift in reverse priority (lowest first).
       #
-      # Final order in config (top = highest priority):
+      # Order in config (top = highest priority):
       #   1. Azure
-      #   2. Australia
-      #   3. CrunchyRoll
-      #   4. South Africa
+      #   3. Australia
+      #   2. South Africa
+      #   4. CrunchyRoll
       #   5. Loyalsoldier
       #   6. MATCH (catch-all)
       # =========================================================
@@ -143,7 +143,15 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'GEOIP,CN,DIRECT'
       ].reverse.each { |r| Value['rules'].unshift(r) }
 
-      # 4. South Africa
+    
+      # 3. CrunchyRoll
+      [
+        'DOMAIN-SUFFIX,crunchyroll.com,CrunchyRoll',
+        'AND,((SRC-IP-CIDR,10.0.0.235/32),(DOMAIN,firebaseremoteconfigrealtime.googleapis.com)),CrunchyRoll'
+      ].reverse.each { |r| Value['rules'].unshift(r) }
+
+
+      # South Africa
       [
         'IP-CIDR,66.22.96.0/24,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,akamaized.net,South Africa 🇿🇦',
@@ -164,21 +172,20 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'GEOIP,ZA,South Africa 🇿🇦'
       ].reverse.each { |r| Value['rules'].unshift(r) }
 
-      # 3. CrunchyRoll
-      [
-        'DOMAIN-SUFFIX,crunchyroll.com,CrunchyRoll',
-        'AND,((SRC-IP-CIDR,10.0.0.235/32),(DOMAIN,firebaseremoteconfigrealtime.googleapis.com)),CrunchyRoll'
-      ].reverse.each { |r| Value['rules'].unshift(r) }
 
-      # 2. Australia
+      #  Australia
       [
         'DOMAIN-SUFFIX,stan.com.au,Aus 🇦🇺',
         'DOMAIN-SUFFIX,stan.video,Aus 🇦🇺',
+        'DOMAIN-SUFFIX,stan.akamaized.net,Aus 🇦🇺',
+        'DOMAIN-SUFFIX,stan.sakamai.net,Aus 🇦🇺',
         'DOMAIN-SUFFIX,youboranqs01.com,Aus 🇦🇺',
         'DOMAIN-SUFFIX,nice264.com,Aus 🇦🇺',
         'DOMAIN-SUFFIX,akamaihd.net,Aus 🇦🇺',
         'GEOIP,AU,Aus 🇦🇺'
       ].reverse.each { |r| Value['rules'].unshift(r) }
+
+
 
       # 1. Azure (highest priority)
       Value['rules'].unshift('RULE-SET,Azure_US_West,Azure_US_West')
