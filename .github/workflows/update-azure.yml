@@ -1,8 +1,8 @@
-name: Update Azure West Europe IPs
+name: Update Azure IP Ranges
 on:
   schedule:
-    - cron: '0 0 * * 1' # Runs every Monday at midnight
-  workflow_dispatch: # Allows you to run it manually
+    - cron: '0 0 * * 5' # Runs every Friday (Microsoft usually updates on Thursdays)
+  workflow_dispatch: # Allows you to run it manually for testing
 
 jobs:
   build:
@@ -11,21 +11,37 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Fetch and Filter Azure IPs
+      - name: Fetch and Generate Rule Sets
         run: |
-          # 1. Download the official Microsoft IP list
-          # Note: Microsoft changes the download link often, so we scrape the landing page for the actual JSON link
+          # 1. Scrape the landing page for the actual JSON download link
           DOWNLOAD_URL=$(curl -sL "https://www.microsoft.com/en-us/download/details.aspx?id=56519" | grep -oE "https://download.microsoft.com/download/[^\"]+ServiceTags_Public_[0-9]+\.json" | head -n 1)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Error: Could not find download URL"
+            exit 1
+          fi
+
           curl -sL "$DOWNLOAD_URL" -o azure.json
 
-          # 2. Extract "WestEurope" IPs and format for Clash
-          echo "payload:" > azure_west_europe.yaml
-          jq -r '.values[] | select(.name=="AzureCloud.westeurope") | .properties.addressPrefixes[]' azure.json | sed 's/^/  - IP-CIDR,/' | sed 's/$/,no-resolve/' >> azure_west_europe.yaml
+          # 2. Function to extract region and format for Clash
+          generate_yaml() {
+            REGION=$1
+            FILENAME=$2
+            echo "payload:" > "$FILENAME"
+            # We filter by the region name and format as IP-CIDR list
+            jq -r ".values[] | select(.name==\"AzureCloud.$REGION\") | .properties.addressPrefixes[]" azure.json | sed 's/^/  - IP-CIDR,/' | sed 's/$/,no-resolve/' >> "$FILENAME"
+            echo "Generated $FILENAME"
+          }
+
+          # 3. Generate all three files
+          generate_yaml "westeurope" "azure_west_europe.yaml"
+          generate_yaml "eastus" "azure_us_east.yaml"
+          generate_yaml "westus" "azure_us_west.yaml"
 
       - name: Commit and Push
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add azure_west_europe.yaml
-          git commit -m "Automated update of Azure West Europe IPs" || exit 0
+          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml
+          git commit -m "Automated update of Azure IP ranges [$(date +'%Y-%m-%d')]" || exit 0
           git push
