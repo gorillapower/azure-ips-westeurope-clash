@@ -23,20 +23,26 @@ jobs:
 
           curl -sL "$DOWNLOAD_URL" -o azure.json
 
-          # 2. Function to extract region and format for Clash
-          generate_yaml() {
-            REGION=$1
+          # 2. Function to extract region (including sub-regions) and format for Clash
+            generate_yaml() {
+            REGION_PATTERN=$1
             FILENAME=$2
             echo "payload:" > "$FILENAME"
-            # We filter by the region name and format as IP-CIDR list
-            jq -r ".values[] | select(.name==\"AzureCloud.$REGION\") | .properties.addressPrefixes[]" azure.json | sed 's/^/  - IP-CIDR,/' | sed 's/$/,no-resolve/' >> "$FILENAME"
-            echo "Generated $FILENAME"
+            
+            # We use a regex in jq to match any region starting with the pattern 
+            # (e.g., "westus" will match "westus", "westus2", and "westus3")
+            jq -r ".values[] | select(.name | test(\"AzureCloud.${REGION_PATTERN}[0-9]*$\")) | .properties.addressPrefixes[]" azure.json \
+            | sort -u \
+            | sed 's/^/  - IP-CIDR,/' \
+            | sed 's/$/,no-resolve/' >> "$FILENAME"
+          
+            echo "Generated $FILENAME with wildcard pattern: $REGION_PATTERN"
           }
-
-          # 3. Generate all three files
-          generate_yaml "westeurope" "azure_west_europe.yaml"
-          generate_yaml "eastus" "azure_us_east.yaml"
-          generate_yaml "westus" "azure_us_west.yaml"
+          
+          # 3. Generate the files using the base region names
+            generate_yaml "westeurope" "azure_west_europe.yaml"
+            generate_yaml "eastus" "azure_us_east.yaml"
+            generate_yaml "westus" "azure_us_west.yaml"
 
       - name: Commit and Push
         run: |
