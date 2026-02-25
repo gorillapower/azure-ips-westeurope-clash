@@ -49,6 +49,13 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'proxies'   => proxies
       })
 
+      ms_index = Value['proxy-groups'].index { |g| g['name'] == 'Microsoft' }
+      tiva_group = {'name' => 'MicrosoftTiva', 'type' => 'select', 'proxies' => ['DIRECT'] + proxies}
+      if ms_index
+        Value['proxy-groups'].insert(ms_index + 1, tiva_group)
+      else
+        Value['proxy-groups'].push(tiva_group)
+      end
       Value['proxy-groups'].push({'name' => 'South Africa 🇿🇦', 'type' => 'select', 'proxies' => proxies})
       Value['proxy-groups'].push({'name' => 'Brazil 🇧🇷',       'type' => 'select', 'proxies' => proxies})
       Value['proxy-groups'].push({'name' => 'CrunchyRoll',      'type' => 'select', 'proxies' => proxies})
@@ -60,31 +67,31 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
       Value['rule-providers'] ||= {}
 
-      # Loyalsoldier
-      {
-        'reject'       => ['domain',    'reject.txt',        './ruleset/reject.yaml'],
-        'icloud'       => ['domain',    'icloud.txt',        './ruleset/icloud.yaml'],
-        'apple'        => ['domain',    'apple.txt',         './ruleset/apple.yaml'],
-        'google'       => ['domain',    'google.txt',        './ruleset/google.yaml'],
-        'proxy'        => ['domain',    'proxy.txt',         './ruleset/proxy.yaml'],
-        'direct'       => ['domain',    'direct.txt',        './ruleset/direct.yaml'],
-        'private'      => ['domain',    'private.txt',       './ruleset/private.yaml'],
-        'gfw'          => ['domain',    'gfw.txt',           './ruleset/gfw.yaml'],
-        'greatfire'    => ['domain',    'greatfire.txt',     './ruleset/greatfire.yaml'],
-        'tld-not-cn'   => ['domain',    'tld-not-cn.txt',    './ruleset/tld-not-cn.yaml'],
-        'telegramcidr' => ['ipcidr',    'telegramcidr.txt',  './ruleset/telegramcidr.yaml'],
-        'cncidr'       => ['ipcidr',    'cncidr.txt',        './ruleset/cncidr.yaml'],
-        'lancidr'      => ['ipcidr',    'lancidr.txt',       './ruleset/lancidr.yaml'],
-        'applications' => ['classical', 'applications.txt',  './ruleset/applications.yaml']
-      }.each do |name, (behavior, file, path)|
-        Value['rule-providers'][name] = {
-          'type'     => 'http',
-          'behavior' => behavior,
-          'url'      => \"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/#{file}\",
-          'path'     => path,
-          'interval' => 86400
-        }
-      end
+      # Loyalsoldier (disabled - using subscription rules instead)
+      # {
+      #   'reject'       => ['domain',    'reject.txt',        './ruleset/reject.yaml'],
+      #   'icloud'       => ['domain',    'icloud.txt',        './ruleset/icloud.yaml'],
+      #   'apple'        => ['domain',    'apple.txt',         './ruleset/apple.yaml'],
+      #   'google'       => ['domain',    'google.txt',        './ruleset/google.yaml'],
+      #   'proxy'        => ['domain',    'proxy.txt',         './ruleset/proxy.yaml'],
+      #   'direct'       => ['domain',    'direct.txt',        './ruleset/direct.yaml'],
+      #   'private'      => ['domain',    'private.txt',       './ruleset/private.yaml'],
+      #   'gfw'          => ['domain',    'gfw.txt',           './ruleset/gfw.yaml'],
+      #   'greatfire'    => ['domain',    'greatfire.txt',     './ruleset/greatfire.yaml'],
+      #   'tld-not-cn'   => ['domain',    'tld-not-cn.txt',    './ruleset/tld-not-cn.yaml'],
+      #   'telegramcidr' => ['ipcidr',    'telegramcidr.txt',  './ruleset/telegramcidr.yaml'],
+      #   'cncidr'       => ['ipcidr',    'cncidr.txt',        './ruleset/cncidr.yaml'],
+      #   'lancidr'      => ['ipcidr',    'lancidr.txt',       './ruleset/lancidr.yaml'],
+      #   'applications' => ['classical', 'applications.txt',  './ruleset/applications.yaml']
+      # }.each do |name, (behavior, file, path)|
+      #   Value['rule-providers'][name] = {
+      #     'type'     => 'http',
+      #     'behavior' => behavior,
+      #     'url'      => "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/#{file}",
+      #     'path'     => path,
+      #     'interval' => 86400
+      #   }
+      # end
 
       # Azure - ipcidr behavior (raw CIDRs, no prefix)
       Value['rule-providers']['Azure_West_Europe'] = {
@@ -114,42 +121,37 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # =========================================================
       # RULES
       #
-      # Nuke original rules and build from scratch.
+      # Prepend custom rules on top of subscription rules.
       # Unshift in reverse priority (lowest first).
       #
       # Order in config (top = highest priority):
-      #   1. Azure
+      #   1. MicrosoftTiva AND rules (tiva 10.0.0.188, mirrors Microsoft group)
+      #   2. Azure CIDR (West Europe, US East, US West)
       #   3. Australia
-      #   2. South Africa
-      #   4. CrunchyRoll
-      #   5. Loyalsoldier
-      #   6. MATCH (catch-all)
+      #   4. South Africa
+      #   5. CrunchyRoll
+      #   6. [subscription rules + catch-all]
       # =========================================================
 
-      Value['rules'] = []
-
-      # Catch-all (bottom of the list)
-      Value['rules'].push('MATCH,' + proxy_group_name)
-
-      # 5. Loyalsoldier
-      [
-        'RULE-SET,applications,DIRECT',
-        'RULE-SET,reject,REJECT',
-        'RULE-SET,icloud,DIRECT',
-        'RULE-SET,apple,DIRECT',
-        'RULE-SET,google,'     + proxy_group_name,
-        'RULE-SET,proxy,'      + proxy_group_name,
-        'RULE-SET,direct,DIRECT',
-        'RULE-SET,private,DIRECT,no-resolve',
-        'RULE-SET,gfw,'        + proxy_group_name,
-        'RULE-SET,greatfire,'  + proxy_group_name,
-        'RULE-SET,tld-not-cn,' + proxy_group_name,
-        'RULE-SET,telegramcidr,' + proxy_group_name + ',no-resolve',
-        'RULE-SET,cncidr,DIRECT,no-resolve',
-        'RULE-SET,lancidr,DIRECT,no-resolve',
-        'GEOIP,LAN,DIRECT',
-        'GEOIP,CN,DIRECT'
-      ].reverse.each { |r| Value['rules'].unshift(r) }
+      # Loyalsoldier (disabled - using subscription rules instead)
+      # Value['rules'] = []
+      # Value['rules'].push('MATCH,' + proxy_group_name)
+      # [
+      #   'RULE-SET,applications,DIRECT',
+      #   'RULE-SET,private,DIRECT,no-resolve',
+      #   'RULE-SET,reject,REJECT',
+      #   'RULE-SET,icloud,DIRECT',
+      #   'RULE-SET,apple,DIRECT',
+      #   'RULE-SET,google,'     + proxy_group_name,
+      #   'RULE-SET,proxy,'      + proxy_group_name,
+      #   'RULE-SET,direct,DIRECT',
+      #   'RULE-SET,tld-not-cn,' + proxy_group_name,
+      #   'RULE-SET,telegramcidr,' + proxy_group_name + ',no-resolve',
+      #   'RULE-SET,cncidr,DIRECT,no-resolve',
+      #   'RULE-SET,lancidr,DIRECT,no-resolve',
+      #   'GEOIP,LAN,DIRECT',
+      #   'GEOIP,CN,DIRECT'
+      # ].reverse.each { |r| Value['rules'].unshift(r) }
 
     
       # 3. CrunchyRoll
@@ -196,10 +198,59 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
 
 
-      # 1. Azure (highest priority)
+      # 2. Azure CIDR
       Value['rules'].unshift('RULE-SET,Azure_US_West,Azure_US_West')
       Value['rules'].unshift('RULE-SET,Azure_US_East,Azure_US_East')
       Value['rules'].unshift('RULE-SET,Azure_West_Europe,Azure_West_Europe')
+
+      # 1. Tiva's Microsoft - device-specific DIRECT routing
+      #    Dynamically mirrors every rule in the subscription's Microsoft proxy
+      #    group as a device-specific AND rule pointing to MicrosoftTiva.
+      #    Must be above Azure CIDR rules — many Microsoft IPs overlap with them.
+      tiva_ips = [
+        '10.0.0.188',  # laptop
+        '10.0.0.109', # iphone
+        '10.0.0.216', # ipad
+        '10.0.0.221', # xiaomi pro
+      ]
+      supported = %w[DOMAIN DOMAIN-SUFFIX DOMAIN-KEYWORD]
+
+      tiva_rules = tiva_ips.flat_map do |ip|
+        Value['rules']
+          .select  { |r| r.end_with?(',Microsoft') }
+          .map do |rule|
+            parts      = rule.split(',')
+            rule_type  = parts[0]
+            rule_value = parts[1..-2].join(',')
+            next unless supported.include?(rule_type)
+            \"AND,((SRC-IP-CIDR,#{ip}/32),(#{rule_type},#{rule_value})),MicrosoftTiva\"
+          end
+          .compact
+      end
+
+      tiva_rules.reverse.each { |r| Value['rules'].unshift(r) }
+
+      # 0. Tiva's additional DIRECT rules — hardcoded domains that always bypass proxy
+      #    Applied above MicrosoftTiva rules so these win on any overlap.
+      tiva_direct_domains = [
+        # Banks
+        ['DOMAIN-SUFFIX', 'eqi.com.br'],
+        ['DOMAIN-SUFFIX', 'btgpactual.com'],
+        # Suzano
+        ['DOMAIN-SUFFIX', 'cloudpay.net'],
+        ['DOMAIN-SUFFIX', 'suzano.com.br'],
+        ['DOMAIN-SUFFIX', 'replicon.com'],
+        ['DOMAIN-SUFFIX', 'service-now.com'],
+        ['DOMAIN-SUFFIX', 'optionsreport.net'],
+      ]
+
+      tiva_direct_rules = tiva_ips.flat_map do |ip|
+        tiva_direct_domains.map do |rule_type, rule_value|
+          \"AND,((SRC-IP-CIDR,#{ip}/32),(#{rule_type},#{rule_value})),DIRECT\"
+        end
+      end
+
+      tiva_direct_rules.reverse.each { |r| Value['rules'].unshift(r) }
 
     end
 
