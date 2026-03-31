@@ -26,11 +26,44 @@ echo "${LOGTIME} [ClashRules] CONFIG_FILE exists, proceeding with YAML modificat
 ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
   begin
     Value = YAML.load_file('$CONFIG_FILE')
-    first_group = Value['proxy-groups'][0]
+    builtin_selector_names = %w[DIRECT REJECT GLOBAL FALLBACK]
+    selectable_builtin_names = %w[DIRECT]
+    ordered_unique = lambda do |items|
+      items.each_with_object([]) do |item, memo|
+        normalized = item.to_s.strip
+        next if normalized.empty? || memo.include?(normalized)
+        memo << normalized
+      end
+    end
+    warn_and_skip = lambda do |message|
+      File.open('$LOG_FILE', 'a') { |f| f.puts \"${LOGTIME} [ClashRules] WARN: #{message}. Skipping custom changes.\" }
+    end
 
-    if first_group && first_group['proxies']
-      proxies = first_group['proxies']
-      proxy_group_name = first_group['name']
+    proxy_groups = Value['proxy-groups']
+    first_group = proxy_groups.is_a?(Array) ? proxy_groups[0] : nil
+    main_selector_name = first_group && first_group['name'].to_s.strip
+    raw_main_proxies = first_group && first_group['proxies'].is_a?(Array) ? first_group['proxies'] : nil
+
+    if !proxy_groups.is_a?(Array) || proxy_groups.empty?
+      warn_and_skip.call('proxy-groups is missing or empty')
+    elsif main_selector_name.nil? || main_selector_name.empty?
+      warn_and_skip.call('first proxy group name is missing')
+    elsif raw_main_proxies.nil? || raw_main_proxies.empty?
+      warn_and_skip.call('first proxy group proxies are missing or empty')
+    else
+      filtered_main_proxies = ordered_unique.call(
+        raw_main_proxies.reject do |name|
+          normalized = name.to_s.strip
+          builtin_selector_names.include?(normalized) || normalized == main_selector_name
+        end
+      )
+
+      if filtered_main_proxies.empty?
+        warn_and_skip.call('first proxy group only contains built-in-like entries after filtering')
+      else
+        proxy_group_name = main_selector_name
+        url_test_group_proxies = filtered_main_proxies
+        select_group_proxies = ordered_unique.call(selectable_builtin_names + [main_selector_name] + filtered_main_proxies)
 
       # =========================================================
       # PROXY GROUPS
@@ -43,7 +76,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'interval'  => 300,
         'tolerance' => 50,
         'lazy'      => true,
-        'proxies'   => proxies
+        'proxies'   => url_test_group_proxies
       })
 
       Value['proxy-groups'].push({
@@ -52,7 +85,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'url'       => 'https://s3eastus.blob.core.windows.net/public/latency-test.json',
         'interval'  => 300,
         'tolerance' => 50,
-        'proxies'   => proxies
+        'proxies'   => url_test_group_proxies
       })
 
       Value['proxy-groups'].push({
@@ -61,20 +94,26 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'url'       => 'https://q9westus.blob.core.windows.net/public/latency-test.json',
         'interval'  => 300,
         'tolerance' => 50,
-        'proxies'   => proxies
+        'proxies'   => url_test_group_proxies
+      })
+
+      Value['proxy-groups'].push({
+        'name'    => 'Azure',
+        'type'    => 'select',
+        'proxies' => select_group_proxies
       })
 
       ms_index = Value['proxy-groups'].index { |g| g['name'] == 'Microsoft' }
-      tiva_group = {'name' => 'MicrosoftTiva', 'type' => 'select', 'proxies' => ['DIRECT'] + proxies}
+      tiva_group = {'name' => 'MicrosoftTiva', 'type' => 'select', 'proxies' => select_group_proxies}
       if ms_index
         Value['proxy-groups'].insert(ms_index + 1, tiva_group)
       else
         Value['proxy-groups'].push(tiva_group)
       end
-      Value['proxy-groups'].push({'name' => 'South Africa 🇿🇦', 'type' => 'select', 'proxies' => proxies})
-      Value['proxy-groups'].push({'name' => 'Brazil 🇧🇷',       'type' => 'select', 'proxies' => proxies})
-      Value['proxy-groups'].push({'name' => 'CrunchyRoll',      'type' => 'select', 'proxies' => proxies})
-      Value['proxy-groups'].push({'name' => 'Aus 🇦🇺',          'type' => 'select', 'proxies' => proxies})
+      Value['proxy-groups'].push({'name' => 'South Africa 🇿🇦', 'type' => 'select', 'proxies' => select_group_proxies})
+      Value['proxy-groups'].push({'name' => 'Brazil 🇧🇷',       'type' => 'select', 'proxies' => select_group_proxies})
+      Value['proxy-groups'].push({'name' => 'CrunchyRoll',      'type' => 'select', 'proxies' => select_group_proxies})
+      Value['proxy-groups'].push({'name' => 'Aus 🇦🇺',          'type' => 'select', 'proxies' => select_group_proxies})
 
       # =========================================================
       # RULE PROVIDERS
@@ -148,12 +187,14 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # Unshift in reverse priority (lowest first).
       #
       # Order in config (top = highest priority):
-      #   1. MicrosoftTiva AND rules (tiva 10.0.0.188, mirrors Microsoft group)
-      #   2. Azure CIDR (West Europe, US East, US West)
+      #   1. MicrosoftTiva AND rules (tiva device — mirrors Microsoft + Azure group rules)
+      #   2. Azure CIDR rule providers (West Europe, US East, US West) — region-specific, wins over domain rules
+      #   2. Azure domain rules (azure.com, azure.net, windows.net, azurewebsites.net, etc.) → Azure group
       #   3. Australia
       #   4. South Africa
       #   5. CrunchyRoll
-      #   6. [subscription rules + catch-all]
+      #   6. Microsoft AdHoc domain rules (Office products: outlook, sharepoint, teams, etc.) → Microsoft group
+      #   7. [subscription rules + catch-all]
       # =========================================================
 
       # Loyalsoldier (disabled - using subscription rules instead)
@@ -196,7 +237,6 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
           'DOMAIN-SUFFIX,office.net,Microsoft',
           'DOMAIN-SUFFIX,live.com,Microsoft',
           'DOMAIN-SUFFIX,windows.com,Microsoft',
-          'DOMAIN-SUFFIX,windows.net,Microsoft',
           'DOMAIN-SUFFIX,microsoft.com,Microsoft',
           'DOMAIN-SUFFIX,cloud.microsoft,Microsoft',
           'DOMAIN-SUFFIX,microsoftonline.com,Microsoft',
@@ -249,6 +289,33 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
 
 
+      # 2. Azure domain rules — catch Azure platform traffic not covered by region-specific
+      #    IP rule providers (e.g. Azure services in uncovered regions).
+      #    Sits below Azure IP rule providers (region-specific wins) but above Microsoft AdHoc.
+      #    windows.net moved here from Microsoft AdHoc — it's Azure platform, not a Microsoft product.
+      azure_group = Value['proxy-groups'].find { |g| g['name'] == 'Azure' }
+      if azure_group
+        [
+          'DOMAIN-SUFFIX,windows.net,Azure',
+          'DOMAIN-SUFFIX,azure.com,Azure',
+          'DOMAIN-SUFFIX,azure.net,Azure',
+          'DOMAIN-SUFFIX,azuredatalakestore.net,Azure',
+          'DOMAIN-SUFFIX,azuredatalakeanalytics.net,Azure',
+          'DOMAIN-SUFFIX,dev.azuresynapse.net,Azure',
+          'DOMAIN-SUFFIX,azurewebsites.net,Azure',
+          'DOMAIN-SUFFIX,azureedge.net,Azure',
+          'DOMAIN-SUFFIX,azurefd.net,Azure',
+          'DOMAIN-SUFFIX,trafficmanager.net,Azure',
+          'DOMAIN-SUFFIX,azurecr.io,Azure',
+          'DOMAIN-SUFFIX,azmk8s.io,Azure',
+          'DOMAIN-SUFFIX,azure-api.net,Azure',
+          'DOMAIN-SUFFIX,cloudapp.net,Azure',
+          'DOMAIN-SUFFIX,msecnd.net,Azure',
+          'DOMAIN-SUFFIX,azurecontainer.io,Azure',
+          'DOMAIN-SUFFIX,azure-mobile.net,Azure',
+        ].reverse.each { |r| Value['rules'].unshift(r) }
+      end
+
       # 2. Azure CIDR
       Value['rules'].unshift('RULE-SET,Azure_US_West,Azure_US_West')
       Value['rules'].unshift('RULE-SET,Azure_US_East,Azure_US_East')
@@ -274,7 +341,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
       tiva_rules = tiva_ips.flat_map do |ip|
         Value['rules']
-          .select  { |r| r.end_with?(',Microsoft') }
+          .select  { |r| r.end_with?(',Microsoft') || r.end_with?(',Azure') }
           .map do |rule|
             parts      = rule.split(',')
             rule_type  = parts[0]
@@ -290,14 +357,21 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # Tiva's Teams media — read CIDRs from the downloaded rule provider file and generate
       # device-specific AND rules pointing to MicrosoftTiva.
       # Stays in sync with microsoft_teams.yaml automatically on each restart.
+      # Falls back to known CIDRs on first run before Clash has downloaded the rule provider.
       teams_path = '/etc/openclash/rule_provider/microsoft_teams.yaml'
-      if File.exist?(teams_path)
-        teams_cidrs = YAML.load_file(teams_path)['payload'] || []
-        tiva_ips.each do |ip|
-          teams_cidrs
-            .reject { |cidr| cidr.include?(':') }
-            .reverse.each { |cidr| Value['rules'].unshift(\"AND,((SRC-IP-CIDR,#{ip}/32),(IP-CIDR,#{cidr})),MicrosoftTiva\") }
-        end
+      teams_cidrs = if File.exist?(teams_path)
+        File.open('$LOG_FILE', 'a') { |f| f.puts '${LOGTIME} [ClashRules] microsoft_teams.yaml found on disk, loading CIDRs.' }
+        YAML.load_file(teams_path)['payload'] || []
+      else
+        File.open('$LOG_FILE', 'a') { |f| f.puts '${LOGTIME} [ClashRules] microsoft_teams.yaml not found at #{teams_path}, using fallback CIDRs.' }
+        ['52.112.0.0/14', '52.122.0.0/15']
+      end
+      File.open('$LOG_FILE', 'a') { |f| f.puts \"${LOGTIME} [ClashRules] Teams CIDRs: #{teams_cidrs.join(', ')}\" }
+
+      tiva_ips.each do |ip|
+        teams_cidrs
+          .reject { |cidr| cidr.include?(':') }
+          .reverse.each { |cidr| Value['rules'].unshift(\"AND,((SRC-IP-CIDR,#{ip}/32),(IP-CIDR,#{cidr})),MicrosoftTiva\") }
       end
 
       # 0. Tiva's additional DIRECT rules — hardcoded domains that always bypass proxy
@@ -336,6 +410,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
       
 
+      end
     end
 
     File.open('$CONFIG_FILE','w') {|f| YAML.dump(Value, f)}
