@@ -8,6 +8,21 @@ LOGTIME=$(date "+%Y-%m-%d %H:%M:%S")
 LOG_FILE="/tmp/openclash.log"
 CONFIG_FILE="$1"
 
+echo "${LOGTIME} [ClashRules] Script started. CONFIG_FILE='${CONFIG_FILE}'" >> $LOG_FILE
+
+if [ -z "$CONFIG_FILE" ]; then
+  echo "${LOGTIME} [ClashRules] ERROR: CONFIG_FILE is empty — script is running from the WRONG HOOK." >> $LOG_FILE
+  echo "${LOGTIME} [ClashRules] This script must be placed in 'Overwrite Settings', not 'Developer Settings / Firewall Rules'." >> $LOG_FILE
+  exit 1
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "${LOGTIME} [ClashRules] ERROR: CONFIG_FILE path '${CONFIG_FILE}' does not exist on disk." >> $LOG_FILE
+  exit 1
+fi
+
+echo "${LOGTIME} [ClashRules] CONFIG_FILE exists, proceeding with YAML modification." >> $LOG_FILE
+
 ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
   begin
     Value = YAML.load_file('$CONFIG_FILE')
@@ -118,6 +133,14 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'interval' => 86400
       }
 
+      Value['rule-providers']['Microsoft_Teams'] = {
+        'type'     => 'http',
+        'behavior' => 'ipcidr',
+        'url'      => 'https://raw.githubusercontent.com/gorillapower/azure-ips-westeurope-clash/refs/heads/main/microsoft_teams.yaml',
+        'path'     => './rule_provider/microsoft_teams.yaml',
+        'interval' => 86400
+      }
+
       # =========================================================
       # RULES
       #
@@ -153,6 +176,34 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       #   'GEOIP,CN,DIRECT'
       # ].reverse.each { |r| Value['rules'].unshift(r) }
 
+    
+      #4. AdHoc RULES
+      [
+        'DOMAIN-SUFFIX,singaporeair.com,' + proxy_group_name
+      ].reverse.each { |r| Value['rules'].unshift(r) }
+
+      # Microsoft domains for all devices — routes to Microsoft proxy group if it exists.
+      # Tiva's device overrides these via tiva_direct_domains (DIRECT wins due to higher priority).
+      # Duplicates with subscription Microsoft rules are harmless — first match wins.
+      ms_group = Value['proxy-groups'].find { |g| g['name'] == 'Microsoft' }
+      if ms_group
+        [
+          'DOMAIN-SUFFIX,sharepoint.com,Microsoft',
+          'DOMAIN-SUFFIX,onedrive.com,Microsoft',
+          'DOMAIN-SUFFIX,outlook.com,Microsoft',
+          'DOMAIN-SUFFIX,office.com,Microsoft',
+          'DOMAIN-SUFFIX,office365.com,Microsoft',
+          'DOMAIN-SUFFIX,office.net,Microsoft',
+          'DOMAIN-SUFFIX,live.com,Microsoft',
+          'DOMAIN-SUFFIX,windows.com,Microsoft',
+          'DOMAIN-SUFFIX,windows.net,Microsoft',
+          'DOMAIN-SUFFIX,microsoft.com,Microsoft',
+          'DOMAIN-SUFFIX,cloud.microsoft,Microsoft',
+          'DOMAIN-SUFFIX,microsoftonline.com,Microsoft',
+          'DOMAIN-SUFFIX,teams.microsoft.com,Microsoft',
+        ].reverse.each { |r| Value['rules'].unshift(r) }
+      end
+    
     
       # 3. CrunchyRoll
       [
@@ -203,15 +254,21 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       Value['rules'].unshift('RULE-SET,Azure_US_East,Azure_US_East')
       Value['rules'].unshift('RULE-SET,Azure_West_Europe,Azure_West_Europe')
 
+      # Microsoft Teams media IPs — IP-based UDP traffic (no hostname, domain rules never match).
+      # Non-tiva devices: route via Microsoft proxy group if it exists.
+      # Tiva's device: AND rules generated below from the same file, pointing to MicrosoftTiva.
+      ms_group = Value['proxy-groups'].find { |g| g['name'] == 'Microsoft' }
+      Value['rules'].unshift('RULE-SET,Microsoft_Teams,Microsoft,no-resolve') if ms_group
+
       # 1. Tiva's Microsoft - device-specific DIRECT routing
       #    Dynamically mirrors every rule in the subscription's Microsoft proxy
       #    group as a device-specific AND rule pointing to MicrosoftTiva.
       #    Must be above Azure CIDR rules — many Microsoft IPs overlap with them.
       tiva_ips = [
-        '10.0.0.188',  # laptop
-        '10.0.0.109', # iphone
-        '10.0.0.216', # ipad
-        '10.0.0.221', # xiaomi pro
+        '10.0.0.98', # laptop
+        #'10.0.0.109', # iphone
+        #'10.0.0.216', # ipad
+        #'10.0.0.221', # xiaomi pro
       ]
       supported = %w[DOMAIN DOMAIN-SUFFIX DOMAIN-KEYWORD]
 
@@ -230,8 +287,28 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
       tiva_rules.reverse.each { |r| Value['rules'].unshift(r) }
 
+      # Tiva's Teams media — read CIDRs from the downloaded rule provider file and generate
+      # device-specific AND rules pointing to MicrosoftTiva.
+      # Stays in sync with microsoft_teams.yaml automatically on each restart.
+      teams_path = '/etc/openclash/rule_provider/microsoft_teams.yaml'
+      if File.exist?(teams_path)
+        teams_cidrs = YAML.load_file(teams_path)['payload'] || []
+        tiva_ips.each do |ip|
+          teams_cidrs
+            .reject { |cidr| cidr.include?(':') }
+            .reverse.each { |cidr| Value['rules'].unshift(\"AND,((SRC-IP-CIDR,#{ip}/32),(IP-CIDR,#{cidr})),MicrosoftTiva\") }
+        end
+      end
+
       # 0. Tiva's additional DIRECT rules — hardcoded domains that always bypass proxy
-      #    Applied above MicrosoftTiva rules so these win on any overlap.
+      #    for tiva's device regardless of what the subscription's Microsoft group contains.
+      #
+      #    Priority: tiva_direct_rules are prepended AFTER tiva_rules, so they sit higher
+      #    in the final rule list and always win. Duplicates with tiva_rules or Value['rules']
+      #    are harmless — Clash stops at the first match.
+      #
+      #    Microsoft domains are also injected into AdHoc rules (pointing to the Microsoft
+      #    proxy group) for all other devices. Any overlap with subscription rules is fine.
       tiva_direct_domains = [
         # Banks
         ['DOMAIN-SUFFIX', 'eqi.com.br'],
@@ -242,6 +319,9 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         ['DOMAIN-SUFFIX', 'replicon.com'],
         ['DOMAIN-SUFFIX', 'service-now.com'],
         ['DOMAIN-SUFFIX', 'optionsreport.net'],
+        ['DOMAIN-SUFFIX', 'concursolutions.com'],
+        ['DOMAIN-SUFFIX', 'apptentive.com'],
+        ['DOMAIN-SUFFIX', 'cloud.sap'],
       ]
 
       tiva_direct_rules = tiva_ips.flat_map do |ip|
@@ -251,6 +331,10 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       end
 
       tiva_direct_rules.reverse.each { |r| Value['rules'].unshift(r) }
+      
+      
+
+      
 
     end
 

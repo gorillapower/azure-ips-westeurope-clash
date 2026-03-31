@@ -34,10 +34,20 @@ jobs:
           generate_yaml "westeurope" "azure_west_europe.yaml"
           generate_yaml "eastus" "azure_us_east.yaml"
           generate_yaml "westus" "azure_us_west.yaml"
+
+          # Generate Microsoft Teams IP ranges from Office 365 endpoints API
+          # Filters serviceArea=Skype (covers Teams media), IPv4 only
+          echo "payload:" > microsoft_teams.yaml
+          curl -sL "https://endpoints.office.com/endpoints/worldwide?clientrequestid=b10c5ed1-bad1-445f-b386-b919946339a9" \
+            | jq -r '.[] | select(.serviceArea == "Skype") | .ips // [] | .[]' \
+            | grep -v ':' \
+            | sort -u \
+            | sed 's/^/  - /' >> microsoft_teams.yaml
+          echo "Generated microsoft_teams.yaml"
       - name: Commit and Push
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml
+          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml microsoft_teams.yaml
           git commit -m "Automated update of Azure IP ranges [$(date +'%Y-%m-%d')]" || exit 0
           git push
