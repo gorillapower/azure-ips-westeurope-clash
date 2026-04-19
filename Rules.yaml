@@ -27,3 +27,16 @@ rules:
   - DOMAIN-SUFFIX,concursolutions.com,DIRECT
   - DOMAIN-SUFFIX,apptentive.com,DIRECT
   - DOMAIN-SUFFIX,cloud.sap,DIRECT
+
+  # ── RugbyPass ──────────────────────────────────────────
+  - DOMAIN-SUFFIX,imggaming.com,DIRECT
+  - DOMAIN-SUFFIX,dicelaboratory.com,DIRECT
+  - DOMAIN-SUFFIX,dice-live-eu.akamaized.net,DIRECT
+  - DOMAIN-SUFFIX,dice.fm,DIRECT
+  - DOMAIN-SUFFIX,dice.tv,DIRECT
+  - DOMAIN-KEYWORD,dice-live,DIRECT
+  
+  # ── Crunchyroll ────────────────────────────────────────
+  - DOMAIN-SUFFIX,crunchyroll.com,CrunchyRoll
+  - DOMAIN-SUFFIX,vrv.co,CrunchyRoll
+  - DOMAIN-SUFFIX,funimation.com,CrunchyRoll

@@ -244,17 +244,18 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         ].reverse.each { |r| Value['rules'].unshift(r) }
       end
     
-    
       # 3. CrunchyRoll
       [
-        'DOMAIN-SUFFIX,crunchyroll.com,CrunchyRoll',
-        'AND,((SRC-IP-CIDR,10.0.0.235/32),(DOMAIN,firebaseremoteconfigrealtime.googleapis.com)),CrunchyRoll'
+        'DOMAIN-KEYWORD,crunchyroll,CrunchyRoll',
+        'DOMAIN-SUFFIX,vrv.co,CrunchyRoll',
+        'DOMAIN-SUFFIX,funimation.com,CrunchyRoll'
       ].reverse.each { |r| Value['rules'].unshift(r) }
 
 
       # South Africa
       [
         'IP-CIDR,66.22.96.0/24,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,dice-live-eu.akamaized.net,' + proxy_group_name,
         'DOMAIN-SUFFIX,akamaized.net,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,akamai.net,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,amazontrust.com,South Africa 🇿🇦',
@@ -287,6 +288,19 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'GEOIP,AU,Aus 🇦🇺'
       ].reverse.each { |r| Value['rules'].unshift(r) }
 
+
+      # ── RugbyPass / IMG Gaming ────────────────────────────
+      # Must be after South Africa block — dice-live-eu.akamaized.net needs to
+      # beat the broad akamaized.net → South Africa rule.
+      #[
+      #  'DOMAIN,a1802.dscw16.akamai.net,DIRECT',
+      #  'DOMAIN-SUFFIX,imggaming.com,DIRECT',
+      #  'DOMAIN-SUFFIX,dicelaboratory.com,DIRECT',
+      #  'DOMAIN-SUFFIX,dice-live-eu.akamaized.net,DIRECT',
+      #  'DOMAIN-SUFFIX,dice.fm,DIRECT',
+      #  'DOMAIN-SUFFIX,dice.tv,DIRECT',
+      #  'DOMAIN-KEYWORD,dice-live,DIRECT',
+      #].reverse.each { |r| Value['rules'].unshift(r) }
 
 
       # 2. Azure domain rules — catch Azure platform traffic not covered by region-specific
