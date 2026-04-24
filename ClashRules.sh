@@ -248,6 +248,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 
       # Misc AdHoc
       prepend_rules << 'DOMAIN-SUFFIX,singaporeair.com,' + main_selector_name
+      prepend_rules << 'DOMAIN-SUFFIX,tenor.com,' + main_selector_name
 
       # Rule-level dedup — skip rules already present in the subscription
       # (exact string match). Preserves priority order of new rules.
