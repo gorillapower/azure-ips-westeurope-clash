@@ -127,12 +127,13 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       Value['rule-providers'] ||= {}
 
       [
-        ['Azure_West_Europe', 'azure_west_europe', 'ipcidr'],
-        ['Azure_US_East',     'azure_us_east',     'ipcidr'],
-        ['Azure_US_West',     'azure_us_west',     'ipcidr'],
-        ['Azure_All',         'azure_cloud',       'ipcidr'],
-        ['Microsoft_IPs',     'microsoft_ips',     'ipcidr'],
-        ['Microsoft_Domains', 'microsoft_domains', 'domain'],
+        ['Azure_West_Europe',     'azure_west_europe',     'ipcidr'],
+        ['Azure_US_East',         'azure_us_east',         'ipcidr'],
+        ['Azure_US_West',         'azure_us_west',         'ipcidr'],
+        ['Azure_All',             'azure_cloud',           'ipcidr'],
+        ['Microsoft_IPs',         'microsoft_ips',         'ipcidr'],
+        ['Microsoft_M365_Domains','microsoft_m365_domains','domain'],
+        ['Microsoft_Domains',     'microsoft_domains',     'domain'],
       ].each do |provider_name, slug, behavior|
         Value['rule-providers'][provider_name] = {
           'type'     => 'http',
@@ -148,11 +149,15 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # Build prepend list in priority order (top = highest).
       # Final priority order:
       #   1. Banks/Suzano DIRECT (global)
-      #   2. Microsoft_IPs → Microsoft (global, precise M365 carve-out)
-      #   3. Azure CIDR rules → Azure groups (device-scoped, IP-only)
-      #   4. Microsoft_Domains → Microsoft (global, hostname-based MS catch-all)
-      #   5. South Africa, CrunchyRoll, singaporeair (global)
-      #   6. [subscription rules + catch-all]
+      #   2. Microsoft_IPs → Microsoft (global, M365 Optimize/Allow IPs)
+      #   3. Microsoft_M365_Domains → Microsoft (global, M365 hostname carve-out
+      #      for Default-category endpoints whose IPs Microsoft doesn't pin —
+      #      e.g. *.events.data.microsoft.com, parts of Trouter)
+      #   4. Azure CIDR rules → Azure groups (device-scoped, IP-only)
+      #   5. Microsoft_Domains → Microsoft (global, broader MS catch-all
+      #      via blackmatrix7 — Bing, hotmail, telemetry, etc.)
+      #   6. South Africa, CrunchyRoll, singaporeair (global)
+      #   7. [subscription rules + catch-all]
       # =========================================================
 
       Value['rules'] ||= []
@@ -172,13 +177,21 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'DOMAIN-SUFFIX,cloud.sap,DIRECT',
       ])
 
-      # Microsoft 365 IPs — precise carve-out. M365 IPs are a subset of Azure
-      # IPs (Microsoft hosts M365 in Azure), so we put this ABOVE the Azure
-      # rules to let M365 traffic (Teams, Outlook, SharePoint, etc.) match
-      # here first. NO 'no-resolve' — we WANT DNS resolution so this catches
-      # hostname-based connections (teams.microsoft.com) before the Azure
-      # CIDR rules below trigger resolution and grab them.
+      # Microsoft 365 IPs — precise carve-out for M365 Optimize/Allow
+      # endpoints (Microsoft pins these IPs for firewall allowlisting).
+      # Placed above Azure rules: M365 IPs ⊂ Azure IPs, so without this
+      # the Azure rules would grab M365 traffic. NO 'no-resolve' — we WANT
+      # DNS resolution so hostname-based connections (teams.microsoft.com)
+      # match here before the Azure CIDR rules below trigger resolution.
       prepend_rules << 'RULE-SET,Microsoft_IPs,Microsoft'
+
+      # Microsoft 365 hostnames — covers M365 Default-category endpoints
+      # whose IPs Microsoft doesn't pin (they land dynamically across
+      # Azure). Examples: *.events.data.microsoft.com, parts of
+      # *.teams.microsoft.com Trouter (pub-ent-jpea-05-t.trouter…).
+      # These match Microsoft_IPs sometimes but not reliably, so without
+      # this rule they leak into the Azure CIDR rules below.
+      prepend_rules << 'RULE-SET,Microsoft_M365_Domains,Microsoft'
 
       # Azure — device-scoped via SRC-IP-CIDR. Only fires when the source
       # device is in device_ips. Routing is purely IP-based (Microsoft's
@@ -195,9 +208,12 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         prepend_rules << \"AND,((SRC-IP-CIDR,#{ip}/32),(RULE-SET,Azure_All)),Azure\"
       end
 
-      # Microsoft Domains — combined M365 endpoints + blackmatrix7.
-      # Hostname-based catch-all for MS traffic not caught by IPs above.
-      # Covers generic microsoft.com, bing.com, hotmail, Edge, telemetry, etc.
+      # Microsoft Domains — broader catch-all (M365 endpoints ∪ blackmatrix7).
+      # Below Azure rules so it doesn't hijack hostname-accessed Azure
+      # resources (+.windows.net, +.azurewebsites.net, +.azure.com from
+      # blackmatrix7) — those should still route via Azure region groups.
+      # Catches non-Azure-IP MS traffic: Bing, hotmail, generic
+      # microsoft.com, Edge, telemetry, etc.
       prepend_rules << 'RULE-SET,Microsoft_Domains,Microsoft'
 
       # South Africa — dice-live-eu carve-out must precede the broad

@@ -64,6 +64,25 @@ jobs:
             | sed 's/^/  - /' >> microsoft_ips.yaml
           echo "Generated microsoft_ips.yaml"
 
+          # M365 hostnames ONLY — precise carve-out for placement above Azure
+          # CIDR rules. Microsoft splits endpoints into Optimize/Allow/Default;
+          # Default-category endpoints (e.g. *.events.data.microsoft.com,
+          # parts of *.teams.microsoft.com Trouter) are URL-only because
+          # Microsoft deliberately doesn't pin them to specific IPs — they
+          # land dynamically across Azure. So microsoft_ips.yaml alone
+          # cannot catch them; we need the URL list above Azure too.
+          # Output Clash domain provider format (+.foo.com matches apex+sub).
+          # Implicit drops: middle-wildcard URLs (Clash domain providers
+          # can't represent autodiscover.*.onmicrosoft.com etc.).
+          echo "payload:" > microsoft_m365_domains.yaml
+          jq -r '.[] | .urls // [] | .[]' m365.json \
+            | sort -u | awk '
+                /^\*\.[^*]+$/ { sub(/^\*\./, ""); print "  - +." $0; next }
+                /\*/          { next }
+                              { print "  - +." $0 }
+              ' | sort -u >> microsoft_m365_domains.yaml
+          echo "Generated microsoft_m365_domains.yaml ($(grep -c '^  -' microsoft_m365_domains.yaml) entries)"
+
           # ── blackmatrix7 Microsoft.yaml ────────────────────────────
           # Hand-curated, daily-updated list. Adds gap-fill over M365:
           # Bing, hotmail, generic microsoft.com, Edge, telemetry,
@@ -94,6 +113,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml azure_cloud.yaml microsoft_ips.yaml microsoft_domains.yaml
+          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml azure_cloud.yaml microsoft_ips.yaml microsoft_m365_domains.yaml microsoft_domains.yaml
           git commit -m "Automated update of Azure + Microsoft rule sets [$(date +'%Y-%m-%d')]" || exit 0
           git push
