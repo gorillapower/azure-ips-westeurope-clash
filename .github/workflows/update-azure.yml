@@ -11,11 +11,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Fetch and Generate Rule Sets
         run: |
-          # 1. Scrape the landing page for the actual JSON download link
+          # ── Azure ServiceTags ──────────────────────────────────────
+          # Scrape the landing page for the actual JSON download link
           DOWNLOAD_URL=$(curl -sL "https://www.microsoft.com/en-us/download/details.aspx?id=56519" | grep -oE "https://download.microsoft.com/download/[^\"]+ServiceTags_Public_[0-9]+\.json" | head -n 1)
-          
+
           if [ -z "$DOWNLOAD_URL" ]; then
-            echo "Error: Could not find download URL"
+            echo "Error: Could not find Azure ServiceTags download URL"
             exit 1
           fi
           curl -sL "$DOWNLOAD_URL" -o azure.json
@@ -35,19 +36,64 @@ jobs:
           generate_yaml "eastus" "azure_us_east.yaml"
           generate_yaml "westus" "azure_us_west.yaml"
 
-          # Generate Microsoft Teams IP ranges from Office 365 endpoints API
-          # Filters serviceArea=Skype (covers Teams media), IPv4 only
-          echo "payload:" > microsoft_teams.yaml
-          curl -sL "https://endpoints.office.com/endpoints/worldwide?clientrequestid=b10c5ed1-bad1-445f-b386-b919946339a9" \
-            | jq -r '.[] | select(.serviceArea == "Skype") | .ips // [] | .[]' \
+          # Generic Azure-all catch-all — global AzureCloud entry is the union
+          # of all regions (~14k CIDRs). Used as device-scoped fallback below
+          # the region-specific rules so any Azure traffic outside the 3
+          # tracked regions still routes via the generic Azure select group.
+          echo "payload:" > azure_cloud.yaml
+          jq -r '.values[] | select(.name == "AzureCloud") | .properties.addressPrefixes[]' azure.json \
+            | sort -u \
+            | sed 's/^/  - /' >> azure_cloud.yaml
+          echo "Generated azure_cloud.yaml"
+
+          # ── Microsoft 365 endpoints ────────────────────────────────
+          # Authoritative source: endpoints.office.com (REST web service that
+          # supersedes the old XML feed; all M365 service areas — Common,
+          # Exchange, SharePoint, Skype/Teams).
+          M365_GUID=$(uuidgen)
+          curl -sL "https://endpoints.office.com/endpoints/worldwide?clientrequestid=$M365_GUID" -o m365.json
+
+          # IPs (IPv4 only, all service areas) — ipcidr behavior.
+          # This file is the precise carve-out that lets M365 traffic (Teams,
+          # Outlook, SharePoint, etc.) win over Azure CIDR rules even though
+          # Microsoft hosts those services in Azure.
+          echo "payload:" > microsoft_ips.yaml
+          jq -r '.[] | .ips // [] | .[]' m365.json \
             | grep -v ':' \
             | sort -u \
-            | sed 's/^/  - /' >> microsoft_teams.yaml
-          echo "Generated microsoft_teams.yaml"
+            | sed 's/^/  - /' >> microsoft_ips.yaml
+          echo "Generated microsoft_ips.yaml"
+
+          # ── blackmatrix7 Microsoft.yaml ────────────────────────────
+          # Hand-curated, daily-updated list. Adds gap-fill over M365:
+          # Bing, hotmail, generic microsoft.com, Edge, telemetry,
+          # MS-China endpoints, OneDrive shorteners, etc.
+          curl -sL "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Microsoft/Microsoft.yaml" -o blackmatrix7_ms.yaml
+
+          # Combined domain provider — M365 URL patterns ∪ blackmatrix7
+          # DOMAIN/DOMAIN-SUFFIX entries. Output Clash domain provider format
+          # (+.foo.com matches apex+subdomain).
+          # Implicit drops:
+          #   - DOMAIN-KEYWORD entries (incl. over-broad "microsoft" keyword)
+          #     — grep filter only takes DOMAIN/DOMAIN-SUFFIX lines.
+          #   - PROCESS-NAME entries — useless on a router routing other devices.
+          #   - Middle-wildcard entries (e.g. autodiscover.*.onmicrosoft.com)
+          #     — Clash domain providers can't represent them.
+          echo "payload:" > microsoft_domains.yaml
+          {
+            jq -r '.[] | .urls // [] | .[]' m365.json
+            grep -E '^[[:space:]]*-[[:space:]]*DOMAIN(-SUFFIX)?,' blackmatrix7_ms.yaml \
+              | sed -E 's/^[[:space:]]*-[[:space:]]*DOMAIN[^,]*,//'
+          } | sort -u | awk '
+              /^\*\.[^*]+$/ { sub(/^\*\./, ""); print "  - +." $0; next }
+              /\*/          { next }
+                            { print "  - +." $0 }
+            ' | sort -u >> microsoft_domains.yaml
+          echo "Generated microsoft_domains.yaml ($(grep -c '^  -' microsoft_domains.yaml) entries)"
       - name: Commit and Push
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml microsoft_teams.yaml
-          git commit -m "Automated update of Azure IP ranges [$(date +'%Y-%m-%d')]" || exit 0
+          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml azure_cloud.yaml microsoft_ips.yaml microsoft_domains.yaml
+          git commit -m "Automated update of Azure + Microsoft rule sets [$(date +'%Y-%m-%d')]" || exit 0
           git push
