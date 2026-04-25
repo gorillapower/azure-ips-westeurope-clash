@@ -220,6 +220,8 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # akamaized.net rule (RugbyPass streams via that host).
       prepend_rules.concat([
         'IP-CIDR,66.22.96.0/24,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,openeasy.io,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,easyequities.io,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,dice-live-eu.akamaized.net,' + main_selector_name,
         'DOMAIN-SUFFIX,akamaized.net,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,akamai.net,South Africa 🇿🇦',
