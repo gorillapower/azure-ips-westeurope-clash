@@ -663,8 +663,6 @@ payload:
   - +.s-msn.com
   - +.sankie.net
   - +.sclive.net
-  - +.search.production.emea.trafficmanager.net
-  - +.search.production.us.trafficmanager.net
   - +.secure.globalsign.com
   - +.security.microsoft.com
   - +.serverlesslibrary.net

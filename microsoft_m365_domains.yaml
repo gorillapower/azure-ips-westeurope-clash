@@ -145,8 +145,6 @@ payload:
   - +.public-trust.com
   - +.purview.microsoft.com
   - +.r.office.microsoft.com
-  - +.search.production.emea.trafficmanager.net
-  - +.search.production.us.trafficmanager.net
   - +.secure.globalsign.com
   - +.security.microsoft.com
   - +.sharepoint.com
