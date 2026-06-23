@@ -34,9 +34,9 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
     # CIDR rules to that device only, so other household devices (e.g. Teams
     # calls on wife's phone) aren't routed via Azure region proxies.
     device_ips = [
-      '',  # phone
+      '10.0.0.152',  # phone
       '10.0.0.227',  # macbook wifi
-      '',  # macbook ethernet
+      '10.0.0.160',  # macbook ethernet
     ].reject { |ip| ip.to_s.strip.empty? }
 
     ordered_unique = lambda do |items|
@@ -116,7 +116,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         end
       end
 
-      ['Azure', 'Microsoft', 'South Africa 🇿🇦', 'Brazil 🇧🇷', 'CrunchyRoll'].each do |name|
+      ['Azure', 'Microsoft', 'South Africa 🇿🇦', 'Brazil 🇧🇷', 'CrunchyRoll', 'YouTube'].each do |name|
         ensure_select_group.call(name)
       end
 
@@ -134,6 +134,7 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         ['Microsoft_IPs',         'microsoft_ips',         'ipcidr'],
         ['Microsoft_M365_Domains','microsoft_m365_domains','domain'],
         ['Microsoft_Domains',     'microsoft_domains',     'domain'],
+        ['YouTube',               'youtube',               'classical'],
       ].each do |provider_name, slug, behavior|
         Value['rule-providers'][provider_name] = {
           'type'     => 'http',
@@ -247,6 +248,12 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'DOMAIN-SUFFIX,vrv.co,CrunchyRoll',
         'DOMAIN-SUFFIX,funimation.com,CrunchyRoll',
       ])
+
+      # YouTube — classical rule set (domains + a few stable Google IP-CIDRs)
+      # vendored from blackmatrix7. Splits YouTube out of the subscription's
+      # generic Google group into a dedicated YouTube select group. Prepended,
+      # so it wins over the subscription's broad Google rule.
+      prepend_rules << 'RULE-SET,YouTube,YouTube'
 
       # Misc AdHoc
       prepend_rules << 'DOMAIN-SUFFIX,singaporeair.com,' + main_selector_name

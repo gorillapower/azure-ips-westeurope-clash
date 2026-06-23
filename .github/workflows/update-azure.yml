@@ -109,10 +109,21 @@ jobs:
                             { print "  - +." $0 }
             ' | sort -u >> microsoft_domains.yaml
           echo "Generated microsoft_domains.yaml ($(grep -c '^  -' microsoft_domains.yaml) entries)"
+
+          # ── blackmatrix7 YouTube.yaml ──────────────────────────────
+          # Hand-curated, daily-updated classical rule set (DOMAIN-SUFFIX +
+          # a few stable Google IP-CIDRs). Domain-based by design: YouTube is
+          # served from Google Global Cache nodes hosted inside ISP networks
+          # on non-Google ASNs, so an IP list can never be complete or stable.
+          # The real workload is googlevideo.com (video CDN) plus youtube.com,
+          # youtu.be, ytimg.com, ggpht.com, gvt1/gvt2.com. Vendored verbatim
+          # so the rule-provider is insulated from upstream changes.
+          curl -sL "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/YouTube/YouTube.yaml" -o youtube.yaml
+          echo "Generated youtube.yaml ($(grep -c '^  -' youtube.yaml) entries)"
       - name: Commit and Push
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml azure_cloud.yaml microsoft_ips.yaml microsoft_m365_domains.yaml microsoft_domains.yaml
-          git commit -m "Automated update of Azure + Microsoft rule sets [$(date +'%Y-%m-%d')]" || exit 0
+          git add azure_west_europe.yaml azure_us_east.yaml azure_us_west.yaml azure_cloud.yaml microsoft_ips.yaml microsoft_m365_domains.yaml microsoft_domains.yaml youtube.yaml
+          git commit -m "Automated update of Azure + Microsoft + YouTube rule sets [$(date +'%Y-%m-%d')]" || exit 0
           git push
