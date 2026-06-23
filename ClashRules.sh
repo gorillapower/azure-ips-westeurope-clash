@@ -225,6 +225,18 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
         'DOMAIN-SUFFIX,fnb.co.za,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,fnbconnect.co.za,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,fnb.mobi,South Africa 🇿🇦',
+        # Well-known SA sites on non-.co.za domains (the co.za catch-all
+        # below handles every other *.co.za host).
+        'DOMAIN-SUFFIX,property24.com,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,takealot.com,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,superbalist.com,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,news24.com,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,showmax.com,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,supersport.com,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,hollywoodbets.net,South Africa 🇿🇦',
+        # Catch-all: every *.co.za host → SA (incl. those on foreign CDNs
+        # that GEOIP,ZA below would miss).
+        'DOMAIN-SUFFIX,co.za,South Africa 🇿🇦',
         'IP-CIDR,66.22.96.0/24,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,openeasy.io,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,easyequities.io,South Africa 🇿🇦',
