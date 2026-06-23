@@ -220,6 +220,11 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
       # South Africa — dice-live-eu carve-out must precede the broad
       # akamaized.net rule (RugbyPass streams via that host).
       prepend_rules.concat([
+        # FNB (First National Bank) — route via SA so geofenced online
+        # banking and the app keep working from abroad.
+        'DOMAIN-SUFFIX,fnb.co.za,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,fnbconnect.co.za,South Africa 🇿🇦',
+        'DOMAIN-SUFFIX,fnb.mobi,South Africa 🇿🇦',
         'IP-CIDR,66.22.96.0/24,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,openeasy.io,South Africa 🇿🇦',
         'DOMAIN-SUFFIX,easyequities.io,South Africa 🇿🇦',
